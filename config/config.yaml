@@ -1,11 +1,13 @@
 whisper:
-  model: base.en
-
-parser:
-  model: gpt-4o-mini
-  temperature: 0.0
+  model_size: "base.en"
+  language: "en"
+  device: "cuda"
+llm:
+  provider: "openai"
+  model: "gpt-4o-mini"
   max_tokens: 256
-
+  temperature: 0.0
 pipeline:
-  confidence_threshold: 0.5
-  max_latency_seconds: 3.0
+  confidence_threshold: 0.7
+  enable_fallback: true
+  enable_confirmation: false
