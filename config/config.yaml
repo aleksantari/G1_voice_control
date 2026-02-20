@@ -1,0 +1,11 @@
+whisper:
+  model: base.en
+
+parser:
+  model: gpt-4o-mini
+  temperature: 0.0
+  max_tokens: 256
+
+pipeline:
+  confidence_threshold: 0.5
+  max_latency_seconds: 3.0
