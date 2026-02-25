@@ -1,29 +1,69 @@
 """Audio recording utilities for voice command capture.
 
-Provides push-to-talk and fixed-duration recording using sounddevice,
-and WAV file saving via soundfile.
+Records via PulseAudio (parec) so it works through PipeWire and can
+access USB microphones. Saves WAV files via soundfile.
 """
 
 import logging
-import threading
+import subprocess
+import time
 
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
 
-class AudioRecorder:
-    """Records audio from the default microphone.
+def _find_source() -> str | None:
+    """Auto-detect a PulseAudio input source, preferring USB mics."""
+    try:
+        out = subprocess.check_output(
+            ["pactl", "list", "sources", "short"], text=True
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
 
-    Supports push-to-talk (ENTER to start/stop) and fixed-duration
-    recording modes. Audio is captured as float32 mono at 16 kHz.
+    sources = []
+    for line in out.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and ".monitor" not in parts[1]:
+            sources.append(parts[1])
+
+    # Prefer USB sources
+    for s in sources:
+        if "usb" in s.lower():
+            return s
+    # Fall back to first non-monitor input
+    return sources[0] if sources else None
+
+
+class AudioRecorder:
+    """Records audio from the microphone via PulseAudio.
+
+    Uses parec (PulseAudio record) to capture audio through PipeWire,
+    which has access to all audio devices including USB mics.
     """
 
     def __init__(self, sample_rate: int = 16000, channels: int = 1):
         self.sample_rate = sample_rate
         self.channels = channels
+        self.source = _find_source()
+        if self.source:
+            logger.info("AudioRecorder: using source '%s'", self.source)
+        else:
+            logger.warning("AudioRecorder: no PulseAudio source found")
+
+    def _parec_cmd(self) -> list[str]:
+        """Build the parec command."""
+        cmd = [
+            "parec",
+            "--format=float32le",
+            f"--channels={self.channels}",
+            f"--rate={self.sample_rate}",
+        ]
+        if self.source:
+            cmd.append(f"--device={self.source}")
+        return cmd
 
     def record_push_to_talk(self) -> np.ndarray:
         """Record audio with push-to-talk: ENTER to start, ENTER to stop.
@@ -31,33 +71,23 @@ class AudioRecorder:
         Returns:
             Float32 numpy array of audio samples in [-1, 1].
         """
-        chunks: list[np.ndarray] = []
-        recording = threading.Event()
-
-        def callback(indata, frames, time_info, status):
-            if status:
-                logger.warning("Audio callback status: %s", status)
-            if recording.is_set():
-                chunks.append(indata.copy())
-
         input("Press ENTER to start recording...")
-        recording.set()
 
-        stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype="float32",
-            callback=callback,
+        proc = subprocess.Popen(
+            self._parec_cmd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        with stream:
-            input("Recording... Press ENTER to stop.")
-            recording.clear()
 
-        audio = np.concatenate(chunks, axis=0).flatten()
+        input("Recording... Press ENTER to stop.")
+        proc.terminate()
+        raw = proc.stdout.read()
+        proc.wait()
+
+        audio = np.frombuffer(raw, dtype=np.float32)
         logger.info(
-            "Recorded %.2fs of audio (%d samples)",
+            "Recorded %.2fs of audio (%d samples at %dHz)",
             len(audio) / self.sample_rate,
             len(audio),
+            self.sample_rate,
         )
         return audio
 
@@ -70,17 +100,18 @@ class AudioRecorder:
         Returns:
             Float32 numpy array of audio samples in [-1, 1].
         """
-        num_samples = int(self.sample_rate * duration_seconds)
         logger.info("Recording %.1fs of audio...", duration_seconds)
-        audio = sd.rec(
-            num_samples,
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype="float32",
+
+        proc = subprocess.Popen(
+            self._parec_cmd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        sd.wait()
-        audio = audio.flatten()
-        logger.info("Recorded %d samples.", len(audio))
+        time.sleep(duration_seconds)
+        proc.terminate()
+        raw = proc.stdout.read()
+        proc.wait()
+
+        audio = np.frombuffer(raw, dtype=np.float32)
+        logger.info("Recorded %d samples at %dHz.", len(audio), self.sample_rate)
         return audio
 
     def save_wav(
