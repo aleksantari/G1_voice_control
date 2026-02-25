@@ -1,0 +1,59 @@
+Ready? (ENTER to record, 'quit' to exit): 
+Press ENTER to start recording...
+Recording... Press ENTER to stop.
+  Transcription: "move up"
+  Action:     MOVE_UP
+  Magnitude:  MID (4.0mm)
+  Confidence: 1.00
+  Source:     llm
+  Valid:      True — ok
+  Latency:    STT=131.6ms  Parse=1916.2ms
+
+Ready? (ENTER to record, 'quit' to exit): 
+Press ENTER to start recording...
+Recording... Press ENTER to stop.
+LLM confidence 0.20 < 0.50 for 'Come here.', trying regex
+Regex returned None for 'Come here.'
+All parsers failed for 'Come here.', returning safe STOP
+  Transcription: "Come here."
+  Action:     STOP
+  Magnitude:  None (None)
+  Confidence: 0.00
+  Source:     failed
+  Valid:      True — ok
+  Latency:    STT=140.1ms  Parse=1293.6ms
+
+Ready? (ENTER to record, 'quit' to exit): 
+Press ENTER to start recording...
+Recording... Press ENTER to stop.
+  Transcription: "Go forward."
+  Action:     MOVE_FORWARD
+  Magnitude:  MID (4.0mm)
+  Confidence: 1.00
+  Source:     llm
+  Valid:      True — ok
+  Latency:    STT=147.9ms  Parse=1486.6ms
+
+Ready? (ENTER to record, 'quit' to exit): 
+Press ENTER to start recording...
+Recording... Press ENTER to stop.
+  Transcription: "Come back."
+  Action:     RETRACT
+  Magnitude:  MID (4.0mm)
+  Confidence: 0.80
+  Source:     llm
+  Valid:      True — ok
+  Latency:    STT=148.0ms  Parse=1328.8ms
+
+Ready? (ENTER to record, 'quit' to exit): 
+Press ENTER to start recording...
+Recording... Press ENTER to stop.
+  Transcription: "Hey little to the left."
+  Action:     MOVE_LEFT
+  Magnitude:  SMALL (2.0mm)
+  Confidence: 0.90
+  Source:     llm
+  Valid:      True — ok
+  Latency:    STT=177.1ms  Parse=1460.8ms
+
+Ready? (ENTER to record, 'quit' to exit): x
