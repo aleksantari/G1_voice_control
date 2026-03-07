@@ -27,7 +27,11 @@ Microphone / Audio File / Text Input
                  v
   ┌──────────────────────────────┐
   │   RobotCommand (Pydantic)    │   Validated JSON: action, magnitude,
-  │   → DDS topics to robot      │   value_mm, confidence, frame
+  └──────────────┬───────────────┘   value_mm, confidence, frame
+                 v
+  ┌──────────────────────────────┐
+  │   ZMQ Publisher (--zmq)      │   Publishes JSON on tcp://*:5556
+  │   → endoscope_control sub   │   for robot execution
   └──────────────────────────────┘
 ```
 
@@ -54,6 +58,7 @@ G1_voice_control/
 ├── pipeline/
 │   ├── pipeline.py          # Main pipeline (wires everything together)
 │   ├── fallback.py          # FallbackManager + CommandValidator
+│   ├── zmq_publisher.py     # ZMQ PUB socket for endoscope_control
 │   └── test_pipeline.py     # 5 tests (mocked)
 ├── demo/
 │   ├── pipeline_cli.py      # Interactive CLI (text / audio / mic modes)
@@ -136,10 +141,13 @@ All 64 tests should pass.
 
 The pipeline has three modes, all accessed through the CLI:
 
+Add `--zmq` to any mode to publish commands to `tcp://*:5556` for the `endoscope_control` subscriber.
+
 ### Text mode — type commands directly
 
 ```bash
 python demo/pipeline_cli.py text
+python demo/pipeline_cli.py text --zmq    # also publish via ZMQ
 ```
 
 ```
@@ -160,6 +168,7 @@ Text mode — type a command, or 'quit' to exit.
 
 ```bash
 python demo/pipeline_cli.py audio path/to/recording.wav
+python demo/pipeline_cli.py audio path/to/recording.wav --zmq
 ```
 
 Supports WAV, MP3, MP4, M4A, FLAC, and any format FFmpeg can decode.
@@ -168,6 +177,7 @@ Supports WAV, MP3, MP4, M4A, FLAC, and any format FFmpeg can decode.
 
 ```bash
 python demo/pipeline_cli.py mic
+python demo/pipeline_cli.py mic --zmq
 ```
 
 Press ENTER to start recording, speak your command, press ENTER to stop.
@@ -225,3 +235,24 @@ Secrets (API keys) go in `.env` (gitignored), not in config.yaml.
 - **STOP is always prioritized** — the regex parser checks for stop words before any other pattern, and the validator always passes STOP commands regardless of confidence.
 - **The pipeline never throws exceptions** — every failure mode produces a safe STOP command.
 - **Two confidence thresholds** — 0.5 triggers the fallback (LLM was unsure), 0.7 is the validation threshold (command is trustworthy enough to execute).
+
+## ZMQ Communication
+
+When run with `--zmq`, the pipeline publishes validated commands as JSON on `tcp://*:5556` using ZeroMQ PUB/SUB. The `endoscope_control` package (running in a separate conda environment) subscribes to this address and executes the commands on the robot.
+
+```
+┌─────────────────────┐         tcp://localhost:5556         ┌─────────────────────┐
+│   voice_control     │  ───── ZMQ PUB/SUB (JSON) ─────>    │  endoscope_control  │
+│   (conda: voice_    │                                      │  (conda: endoscope) │
+│    control)         │                                      │                     │
+│   Whisper + GPT     │                                      │   DDS → G1 Robot    │
+└─────────────────────┘                                      └─────────────────────┘
+```
+
+Example message published over ZMQ:
+
+```json
+{"action": "MOVE_UP", "magnitude": "SMALL", "frame": "CAMERA", "confidence": 0.95, "value_mm": 2.0, "raw_text": "move up a little", "timestamp": null}
+```
+
+Only valid commands (confidence >= 0.7) are published. Invalid commands and parse failures are displayed locally but not sent to the robot.

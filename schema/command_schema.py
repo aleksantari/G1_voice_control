@@ -68,6 +68,22 @@ class RobotCommand(BaseModel):
         """Return True if confidence meets the minimum threshold (0.7)."""
         return self.confidence >= 0.7
 
+    def to_zmq_dict(self) -> dict:
+        """Convert to a dict matching the endoscope_control subscriber schema.
+
+        Handles differences: STOP gets value_mm=0.0 and magnitude="MID",
+        and adds the timestamp field.
+        """
+        return {
+            "action": self.action.value,
+            "magnitude": self.magnitude.value if self.magnitude else "MID",
+            "frame": self.frame,
+            "confidence": self.confidence,
+            "value_mm": self.value_mm if self.value_mm is not None else 0.0,
+            "raw_text": self.raw_text,
+            "timestamp": None,
+        }
+
     @classmethod
     def create_stop(cls, raw_text: str) -> "RobotCommand":
         """Create a STOP command with full confidence.

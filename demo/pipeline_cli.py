@@ -1,9 +1,11 @@
 """Interactive CLI for the language control pipeline.
 
 Usage:
-    conda run -n voice_control python demo/pipeline_cli.py text
-    conda run -n voice_control python demo/pipeline_cli.py audio path/to/file.wav
-    conda run -n voice_control python demo/pipeline_cli.py mic
+    python demo/pipeline_cli.py text [--zmq]
+    python demo/pipeline_cli.py audio path/to/file.wav [--zmq]
+    python demo/pipeline_cli.py mic [--zmq]
+
+Add --zmq to publish commands to tcp://*:5556 for endoscope_control.
 """
 
 import sys
@@ -11,8 +13,8 @@ import sys
 from pipeline.pipeline import LanguageControlPipeline
 
 
-def show(result):
-    """Pretty-print a pipeline result dict."""
+def show(result, publisher=None):
+    """Pretty-print a pipeline result dict and optionally publish via ZMQ."""
     cmd = result["command"]
     mag = cmd.magnitude.value if cmd.magnitude else "None"
     val = f"{cmd.value_mm}mm" if cmd.value_mm else "None"
@@ -29,10 +31,14 @@ def show(result):
         print(f"  Latency:    STT={stt:.1f}ms  Parse={parse:.1f}ms")
     else:
         print(f"  Latency:    Parse={parse:.1f}ms")
+
+    if publisher and result["valid"]:
+        json_str = publisher.publish(cmd)
+        print(f"  [ZMQ] Published: {json_str}")
     print()
 
 
-def run_text(pipe):
+def run_text(pipe, publisher=None):
     """Interactive text input loop."""
     print("Text mode — type a command, or 'quit' to exit.\n")
     while True:
@@ -44,18 +50,18 @@ def run_text(pipe):
         if not text or text.lower() == "quit":
             break
         result = pipe.process_text(text)
-        show(result)
+        show(result, publisher)
 
 
-def run_audio(pipe, path):
+def run_audio(pipe, path, publisher=None):
     """Process a single audio file."""
     print(f"Processing: {path}\n")
     result = pipe.process_audio_file(path)
     print(f"  Transcription: \"{result['text']}\"")
-    show(result)
+    show(result, publisher)
 
 
-def run_mic(pipe):
+def run_mic(pipe, publisher=None):
     """Push-to-talk microphone loop."""
     print("Mic mode — press ENTER to record, ENTER to stop. Type 'quit' to exit.\n")
     while True:
@@ -68,31 +74,46 @@ def run_mic(pipe):
             break
         result = pipe.process_microphone()
         print(f"  Transcription: \"{result['text']}\"")
-        show(result)
+        show(result, publisher)
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("text", "audio", "mic"):
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = [a for a in sys.argv[1:] if a.startswith("--")]
+    use_zmq = "--zmq" in flags
+
+    if not args or args[0] not in ("text", "audio", "mic"):
         print(__doc__)
         sys.exit(1)
 
-    mode = sys.argv[1]
+    mode = args[0]
 
-    if mode == "audio" and len(sys.argv) < 3:
+    if mode == "audio" and len(args) < 2:
         print("Error: audio mode requires a file path.")
         print("  python demo/pipeline_cli.py audio path/to/file.wav")
         sys.exit(1)
 
     print("Initializing pipeline...\n")
     pipe = LanguageControlPipeline()
+
+    publisher = None
+    if use_zmq:
+        from pipeline.zmq_publisher import CommandPublisher
+        publisher = CommandPublisher()
+        print("[ZMQ] Publishing commands on tcp://*:5556\n")
+
     print("Pipeline ready.\n")
 
-    if mode == "text":
-        run_text(pipe)
-    elif mode == "audio":
-        run_audio(pipe, sys.argv[2])
-    elif mode == "mic":
-        run_mic(pipe)
+    try:
+        if mode == "text":
+            run_text(pipe, publisher)
+        elif mode == "audio":
+            run_audio(pipe, args[1], publisher)
+        elif mode == "mic":
+            run_mic(pipe, publisher)
+    finally:
+        if publisher:
+            publisher.close()
 
 
 if __name__ == "__main__":
